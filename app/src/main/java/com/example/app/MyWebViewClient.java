@@ -12,12 +12,14 @@ class MyWebViewClient extends WebViewClient {
         String hostname;
 
         // YOUR HOSTNAME
-        hostname = "example.com";
+        hostname = "studysimplify.in";
 
         Uri uri = Uri.parse(url);
-        if (url.startsWith("file:") || uri.getHost() != null && uri.getHost().endsWith(hostname)) {
+        if (url.startsWith("file:") || uri.getHost() != null && uri.getHost().contains(hostname)) {
+            // This is your website, so do not override; let the WebView load the page
             return false;
         }
+        // For all other links, launch the default browser
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
         view.getContext().startActivity(intent);
         return true;

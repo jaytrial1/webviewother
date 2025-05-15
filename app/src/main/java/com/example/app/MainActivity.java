@@ -1,15 +1,22 @@
 package com.example.app;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ObjectAnimator;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
@@ -17,7 +24,12 @@ public class MainActivity extends Activity {
 
     private WebView mWebView;
     private ProgressBar mProgressBar;
+    private FrameLayout mProgressContainer;
     private static final String TAG = "MainActivity";
+    private Handler mHandler;
+    private static final int PROGRESS_DELAY = 100; // Small delay to avoid flashing for fast pages
+    private static final int MIN_PROGRESS_DISPLAY_TIME = 500; // Minimum time to show progress for visual effect
+    private long mLoadStartTime = 0;
 
     @Override
     @SuppressLint("SetJavaScriptEnabled")
@@ -26,6 +38,8 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         mWebView = findViewById(R.id.activity_main_webview);
         mProgressBar = findViewById(R.id.progressBar);
+        mProgressContainer = findViewById(R.id.progressContainer);
+        mHandler = new Handler(Looper.getMainLooper());
         
         // Configure WebView settings
         WebSettings webSettings = mWebView.getSettings();
@@ -38,20 +52,48 @@ public class MainActivity extends Activity {
         
         // Set up WebChromeClient for progress tracking
         mWebView.setWebChromeClient(new WebChromeClient() {
+            private boolean mIsInitialProgress = true;
+            private int mLastProgress = 0;
+            
             @Override
             public void onProgressChanged(WebView view, int newProgress) {
                 super.onProgressChanged(view, newProgress);
-                // Show progress bar when loading starts
-                if (newProgress < 100 && mProgressBar.getVisibility() == View.GONE) {
-                    mProgressBar.setVisibility(View.VISIBLE);
+                
+                // Show progress with a slight delay to avoid flashing for very fast loads
+                if (mIsInitialProgress && newProgress > 0) {
+                    mIsInitialProgress = false;
+                    mHandler.postDelayed(() -> {
+                        if (newProgress < 100) {
+                            showProgressBar();
+                        }
+                    }, PROGRESS_DELAY);
                 }
                 
-                // Update progress value
-                mProgressBar.setProgress(newProgress);
+                // Don't let progress go backwards as it looks strange
+                if (newProgress < mLastProgress && mLastProgress < 100) {
+                    return;
+                }
+                mLastProgress = newProgress;
                 
-                // Hide progress bar when loading is complete
+                // Update progress value with animation
+                if (mProgressBar.getVisibility() == View.VISIBLE) {
+                    ObjectAnimator animation = ObjectAnimator.ofInt(mProgressBar, "progress", mProgressBar.getProgress(), newProgress);
+                    animation.setDuration(300);
+                    animation.setInterpolator(new DecelerateInterpolator());
+                    animation.start();
+                }
+                
+                // Special handling for completion
                 if (newProgress == 100) {
-                    mProgressBar.setVisibility(View.GONE);
+                    // Calculate elapsed time to ensure minimum display duration for visual feedback
+                    long elapsedTime = System.currentTimeMillis() - mLoadStartTime;
+                    long delayForMinDisplay = elapsedTime > MIN_PROGRESS_DISPLAY_TIME ? 0 : MIN_PROGRESS_DISPLAY_TIME - elapsedTime;
+                    
+                    mHandler.postDelayed(() -> {
+                        hideProgressBar();
+                        mIsInitialProgress = true;
+                        mLastProgress = 0;
+                    }, delayForMinDisplay);
                 }
             }
         });
@@ -61,16 +103,18 @@ public class MainActivity extends Activity {
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 super.onPageStarted(view, url, favicon);
-                // Show progress bar when page starts loading
-                mProgressBar.setVisibility(View.VISIBLE);
+                mLoadStartTime = System.currentTimeMillis();
+                // Reset progress and show after a small delay 
+                // (avoids flashing for cache loads)
                 mProgressBar.setProgress(0);
+                mHandler.postDelayed(() -> {
+                    showProgressBar();
+                }, PROGRESS_DELAY);
             }
             
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // Hide progress bar when page finishes loading
-                mProgressBar.setVisibility(View.GONE);
                 Log.d(TAG, "Page loaded: " + url);
             }
         });
@@ -80,6 +124,31 @@ public class MainActivity extends Activity {
 
         // LOCAL RESOURCE
         // mWebView.loadUrl("file:///android_asset/index.html");
+    }
+    
+    private void showProgressBar() {
+        if (mProgressContainer.getVisibility() != View.VISIBLE) {
+            mProgressContainer.setAlpha(0f);
+            mProgressContainer.setVisibility(View.VISIBLE);
+            mProgressContainer.animate()
+                .alpha(1f)
+                .setDuration(200)
+                .setListener(null);
+        }
+    }
+    
+    private void hideProgressBar() {
+        if (mProgressContainer.getVisibility() == View.VISIBLE) {
+            mProgressContainer.animate()
+                .alpha(0f)
+                .setDuration(200)
+                .setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        mProgressContainer.setVisibility(View.GONE);
+                    }
+                });
+        }
     }
 
     @Override
